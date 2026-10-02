@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>名店検索ツール（利用者のGoogle APIキーで動作）</title>
+<style>
+:root{
+  --bg:#f6f4ef; --surface:#ffffff; --surface-2:#faf8f3; --text:#23201b; --muted:#6b645a; --line:#e4dfd4;
+  --accent:#2a6b57; --accent-ink:#ffffff; --accent-soft:#e1efe9;
+  --good:#2f7a4d; --good-soft:#e2f1e7; --warn:#9a6a00; --warn-soft:#fbefd0; --bad:#a23a3a; --bad-soft:#f7e1e1;
+  --shadow:0 1px 2px rgba(40,30,20,.06),0 4px 16px rgba(40,30,20,.06);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#171512; --surface:#211e1a; --surface-2:#1c1a17; --text:#eee8df; --muted:#a9a093; --line:#35302a;
+  --accent:#4fae90; --accent-ink:#0d1a15; --accent-soft:#173229;
+  --good:#6fc493; --good-soft:#1e3327; --warn:#e3b64f; --warn-soft:#352b14; --bad:#e58a8a; --bad-soft:#3a1f1f;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif;line-height:1.7;font-size:15px}
+a{color:var(--accent)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 16px}
+header{padding:32px 0 8px}
+h1{margin:0;font-size:clamp(24px,4vw,32px);letter-spacing:.02em}
+.lead{color:var(--muted);margin:4px 0 0}
+.banner{margin:16px 0 0;padding:10px 14px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:14px}
+.banner.good{background:var(--good-soft);color:var(--good)}
+.settings{margin:20px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow)}
+.settings summary{cursor:pointer;font-weight:700;font-size:15px}
+.settings .body{margin-top:14px;display:grid;gap:12px}
+.settings label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:4px}
+.settings input{width:100%;font:inherit;padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:var(--surface-2);color:var(--text)}
+.settings .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.settings .note{font-size:12.5px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:10px 12px}
+form.search{margin:20px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow);
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:end}
+label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:4px}
+select,input{width:100%;font:inherit;padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:var(--surface-2);color:var(--text)}
+.submit{grid-column:1/-1;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--text);padding:9px 14px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:700;padding:12px 28px;font-size:16px}
+button:disabled{opacity:.55;cursor:wait}
+.hint{color:var(--muted);font-size:13px}
+#status{margin:8px 0 16px;color:var(--muted)}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.meta{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;color:var(--muted);margin-bottom:12px}
+.toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px;margin-bottom:32px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card-head{display:flex;gap:12px;align-items:flex-start}
+.rank{font-size:12px;color:var(--muted)}
+.card h2{margin:0;font-size:18px;line-height:1.4;word-break:break-word}
+.score{margin-left:auto;text-align:center;flex:none}
+.score b{display:block;font-size:28px;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
+.score span{font-size:11px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;padding:2px 9px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line)}
+.chip.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+dl.facts{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:14px}
+dl.facts dt{color:var(--muted);white-space:nowrap}
+dl.facts dd{margin:0;word-break:break-word}
+.unknown{color:var(--muted);font-style:normal;background:var(--surface-2);padding:0 6px;border-radius:5px;font-size:13px}
+.reason{background:var(--accent-soft);border-radius:10px;padding:10px 12px;font-size:13px}
+.reason strong{display:block;font-size:12px;color:var(--accent);margin-bottom:2px}
+details{border-top:1px solid var(--line);padding-top:8px}
+summary{cursor:pointer;font-weight:600;font-size:14px}
+.bars{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.bar-row{font-size:13px}
+.bar-top{display:flex;justify-content:space-between}
+.bar{height:6px;background:var(--surface-2);border:1px solid var(--line);border-radius:99px;overflow:hidden;margin:2px 0}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar-reason{color:var(--muted);font-size:12px}
+.sources{margin:6px 0 0;padding-left:18px;font-size:13px}
+.sources li{word-break:break-all}
+.card-actions{display:flex;gap:8px;margin-top:auto;padding-top:6px}
+.card-actions button{flex:1;white-space:nowrap}
+.note{font-size:12px;color:var(--warn)}
+.empty{padding:40px 20px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:14px}
+.excluded{font-size:13px;color:var(--muted);margin-bottom:40px}
+.excluded ul{padding-left:18px}
+.errbox{border:1px solid var(--bad);background:var(--bad-soft);color:var(--text);border-radius:12px;padding:14px 16px;margin:8px 0 16px}
+.errbox h3{margin:0 0 6px;font-size:15px;color:var(--bad)}
+.errbox pre{white-space:pre-wrap;word-break:break-all;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;margin:8px 0;max-height:220px;overflow:auto}
+dialog{border:none;border-radius:16px;padding:0;max-width:760px;width:calc(100% - 32px);background:var(--surface);color:var(--text);box-shadow:0 10px 40px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(20,15,10,.45)}
+.dlg-head{display:flex;align-items:center;gap:8px;padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+.dlg-head h2{margin:0;font-size:17px;flex:1}
+.dlg-body{padding:16px 20px 24px;max-height:70vh;overflow:auto}
+footer{color:var(--muted);font-size:12px;padding:0 0 40px}
+@media (max-width:760px){form.search{grid-template-columns:1fr 1fr}.cards{grid-template-columns:1fr}.settings .row{grid-template-columns:1fr}}
+@media (max-width:420px){form.search{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>名店検索ツール</h1>
+    <p class="lead">評判は良いのに公式ホームページがないお店を探します。検索はあなた自身のGoogle APIキーでブラウザから直接行われ、料金もあなた自身のGoogleアカウントに課金されます（このサイトの運営者には一切課金されません）。</p>
+    <div id="modeBanner" class="banner" hidden></div>
+  </header>
+
+  <details class="settings" id="settingsBox">
+    <summary>①Google APIキーを設定する（初回のみ）</summary>
+    <div class="body">
+      <div class="note">
+        ここに入力したキーは、あなたのブラウザだけに保存され（localStorage）、このサイトのサーバーには一切送信されません。検索は、あなたのブラウザから直接Googleへ問い合わせるため、料金もあなたのGoogleアカウントに課金されます。<br>
+        キーの取得方法は下の「APIキーの取得方法」を開いてください。<b>取得したら、必ずGoogle Cloud Consoleで「HTTPリファラー」による制限をかけてください</b>（このページのURLを許可リストに入れる）。制限をかけないと、他人にキーを見られたときに勝手に使われる恐れがあります。
+      </div>
+      <div class="row">
+        <div><label for="placesKey">Google Places APIキー（必須）</label><input id="placesKey" placeholder="AIza..." autocomplete="off"></div>
+        <div><label for="searchKey">Googleカスタム検索APIキー（任意）</label><input id="searchKey" placeholder="AIza..." autocomplete="off"></div>
+      </div>
+      <div class="row">
+        <div><label for="searchCx">カスタム検索エンジンID・cx（任意）</label><input id="searchCx" placeholder="例: 012345678901234567890:abcdefg" autocomplete="off"></div>
+        <div style="display:flex;align-items:end"><button id="saveKeysBtn" type="button">このブラウザに保存する</button> <span class="hint" id="saveKeysMsg" style="margin-left:8px"></span></div>
+      </div>
+      <details><summary>APIキーの取得方法</summary>
+        <div class="sec" style="font-size:14px;margin-top:8px">
+          <p><b>1. Google Places APIキー（必須）</b></p>
+          <ol>
+            <li><a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> を開き、Googleアカウントでログイン</li>
+            <li>新しいプロジェクトを作成</li>
+            <li>「APIとサービス」→「ライブラリ」で「Maps JavaScript API」と「Places API (New)」の両方を検索して有効化</li>
+            <li>「お支払い」で請求先アカウント（クレジットカード）を設定（無料枠がありますが設定自体は必要です）</li>
+            <li>「認証情報」→「認証情報を作成」→「APIキー」でキーを発行</li>
+            <li>発行したキーの「アプリケーションの制限」を「HTTPリファラー（ウェブサイト）」にし、このページのURLを登録（重要・安全のため）</li>
+          </ol>
+          <p><b>2. Googleカスタム検索API（任意。SNS確認・キーワード検出に使用）</b></p>
+          <ol>
+            <li><a href="https://programmablesearchengine.google.com/" target="_blank" rel="noopener">Programmable Search Engine</a> で新しい検索エンジンを作成し、検索対象を「ウェブ全体」に設定 → 「検索エンジンID」をコピー</li>
+            <li>Google Cloud Consoleの「ライブラリ」で「Custom Search API」を有効化し、APIキーを発行</li>
+            <li>無料枠は1日100クエリまでです</li>
+          </ol>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <form class="search" id="searchForm">
+    <div><label for="pref">都道府県</label><select id="pref" required></select></div>
+    <div><label for="city">市区町村</label><input id="city" placeholder="例：高山市（空欄でも可）"></div>
+    <div><label for="genre">ジャンル</label>
+      <select id="genre">
+        <option>飲食店</option><option>カフェ</option><option>美容室</option><option>理美容店</option>
+        <option>旅館</option><option>ホテル</option><option>地域密着型サービス</option><option>その他</option>
+      </select>
+      <input id="genreOther" placeholder="例：和菓子店、整体院" hidden style="margin-top:6px">
+    </div>
+    <div><label for="count">検索件数</label>
+      <select id="count"><option value="3">3件</option><option value="5" selected>5件</option><option value="8">8件</option><option value="10">10件</option></select>
+    </div>
+    <div class="submit">
+      <button class="primary" id="goBtn" type="submit">②名店を探す</button>
+      <span class="hint">1回の調査に数十秒〜1分ほどかかります。APIキー未設定でもデモ動作を確認できます。</span>
+    </div>
+  </form>
+
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="results"></div>
+
+  <footer>
+    評価・口コミ数はGoogleマップの検索時点の情報です。「確認できず」は裏付けが取れなかった項目です。営業前に必ず最新情報をご確認ください。<br>
+    「選出理由」は、取得した数値やキーワードの有無だけを機械的に並べたものです（AIによる文章生成は行っていません）。公式サイトの技術診断のみ、このサイトのサーバーで実施しています（Google APIは使っていません）。
+  </footer>
+</div>
+
+<dialog id="dlg"><div class="dlg-head"><h2 id="dlgTitle"></h2><button id="dlgExtra" hidden></button><button id="dlgClose">閉じる</button></div><div class="dlg-body" id="dlgBody"></div></dialog>
+
+<script>
+const PREFS = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
+const UNKNOWN = '確認できず';
+const $ = s => document.querySelector(s);
+const state = { result: null };
+
+$('#pref').innerHTML = '<option value="">選択してください</option>' + PREFS.map(p => `<option>${p}</option>`).join('');
+$('#genre').addEventListener('change', e => { $('#genreOther').hidden = e.target.value !== 'その他'; });
+
+function esc(s){return String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function safeUrl(u){try{const x=new URL(u);return (x.protocol==='https:'||x.protocol==='http:')?x.href:null}catch{return null}}
+function val(v){return (v===null||v===undefined||v===''||v===UNKNOWN)?`<em class="unknown">${UNKNOWN}</em>`:esc(v)}
+function link(u,label){const s=safeUrl(u);return s?`<a href="${esc(s)}" target="_blank" rel="noopener noreferrer">${esc(label||s)}</a>`:val(null)}
+function clamp(n,lo,hi){return Math.max(lo,Math.min(hi,n))}
+$('#dlgClose').addEventListener('click', () => $('#dlg').close());
+
+// ---------- キーの保存（このブラウザのlocalStorageのみ） ----------
+function loadKeys(){
+  try{
+    return {
+      places: localStorage.getItem('meiten_places_key') || '',
+      search: localStorage.getItem('meiten_search_key') || '',
+      cx: localStorage.getItem('meiten_search_cx') || '',
+    };
+  }catch{ return { places:'', search:'', cx:'' }; }
+}
+function saveKeys(k){
+  try{
+    localStorage.setItem('meiten_places_key', k.places || '');
+    localStorage.setItem('meiten_search_key', k.search || '');
+    localStorage.setItem('meiten_search_cx', k.cx || '');
+    return true;
+  }catch{ return false; }
+}
+(function initSettings(){
+  const k = loadKeys();
+  $('#placesKey').value = k.places; $('#searchKey').value = k.search; $('#searchCx').value = k.cx;
+  if(!k.places) $('#settingsBox').open = true;
+  $('#saveKeysBtn').addEventListener('click', () => {
+    const ok = saveKeys({ places: $('#placesKey').value.trim(), search: $('#searchKey').value.trim(), cx: $('#searchCx').value.trim() });
+    $('#saveKeysMsg').textContent = ok ? '保存しました' : '保存できませんでした（ブラウザの設定をご確認ください）';
+    updateModeBanner();
+  });
+})();
+function updateModeBanner(){
+  const k = loadKeys();
+  const b = $('#modeBanner'); b.hidden = false;
+  if(!k.places){ b.classList.remove('good'); b.textContent = 'デモモード：Google Places APIキーが未設定のため、架空のサンプルデータを表示します。①でキーを設定すると本番検索になります。'; }
+  else { b.classList.add('good'); b.textContent = '本番モード：あなたのAPIキーで実際にGoogleへ問い合わせます（利用料はあなたのGoogleアカウントに課金されます）。カスタム検索' + (k.search && k.cx ? '：設定済み' : '：未設定（SNS確認・キーワード検出は「確認できず」になります）'); }
+}
+updateModeBanner();
+
+// ---------- 除外するチェーン店・全国展開企業（部分一致） ----------
+const CHAIN_KEYWORDS = [
+  'マクドナルド', 'スターバックス', 'ドトール', 'すき家', '吉野家', '松屋', 'サイゼリヤ', 'ガスト', 'ジョナサン',
+  'バーミヤン', 'デニーズ', 'ロイヤルホスト', 'CoCo壱番屋', 'ココイチ', '丸亀製麺', 'はなまるうどん', 'てんや',
+  'かつや', '餃子の王将', 'くら寿司', 'スシロー', 'はま寿司', '大戸屋', 'やよい軒', '日高屋', '幸楽苑',
+  'サブウェイ', 'モスバーガー', 'ケンタッキー', 'KFC', 'ピザハット', 'ドミノ・ピザ', 'ドミノピザ', 'セブンイレブン',
+  'ローソン', 'ファミリーマート', 'QBハウス', 'ビッグエコー', 'カラオケ館', '東横イン', 'アパホテル', 'スーパーホテル',
+  'ルートイン', 'ドーミーイン', 'コメダ珈琲', 'タリーズ', 'プロント', 'イオン', 'ダイソー', 'ユニクロ', 'しまむら', 'ニトリ',
+];
+function isChain(name){ return CHAIN_KEYWORDS.some(c => name.includes(c)); }
+const LOCALITY_WORDS = ['地元', '老舗', '郷土', '伝統', '地域', '創業', '名物', '地産地消', '名産', '土地の', '古民家', '地場'];
+const UNIQUENESS_WORDS = ['こだわり', '自家製', '手作り', '限定', '唯一', '名物', '職人', '一軒家', '隠れ家', 'オリジナル', '希少'];
+
+const SCORE_ITEMS = [
+  { key: 'reputation', label: '評判', max: 15 },
+  { key: 'reviews', label: '口コミ数', max: 15 },
+  { key: 'uniqueness', label: '独自性', max: 15 },
+  { key: 'locality', label: '地域性', max: 15 },
+  { key: 'web_gap', label: 'Webサイト不足', max: 20 },
+  { key: 'sns_info', label: 'SNS等の情報量', max: 10 },
+  { key: 'hp_demand', label: 'ホームページ制作需要', max: 10 },
+];
+
+function reputationScore(rating){
+  if(rating==null) return { score:0, reason:'評価を確認できなかったため0点' };
+  const s = rating>=4.5?15:rating>=4.3?13:rating>=4.0?10:rating>=3.7?6:3;
+  return { score:s, reason:`Googleマップの評価が${rating}` };
+}
+function reviewsScore(rc){
+  if(rc==null) return { score:0, reason:'口コミ数を確認できなかったため0点' };
+  const s = rc>=300?15:rc>=100?12:rc>=50?9:rc>=20?6:3;
+  return { score:s, reason:`Googleマップの口コミが${rc}件` };
+}
+function webGapScore(cand, siteAudit){
+  if(!cand.website) return { score:20, reason:'公式サイトが見つからなかった（Googleマップ上に登録なし）' };
+  if(!siteAudit) return { score:8, reason:'公式サイトの登録はあるが、技術診断が未実施（このサイトのサーバーに接続できなかった可能性）' };
+  if(!siteAudit.reachable) return { score:16, reason:'公式サイトの登録はあるが、実際にはアクセスできなかった（閉鎖・移転の可能性）' };
+  let score = 6, reasons = [];
+  if(siteAudit.issues.length){ score += siteAudit.issues.length*4; reasons.push(...siteAudit.issues); }
+  score = clamp(score, 2, 18);
+  return { score, reason: reasons.length ? reasons.join('／') : '公式サイトは確認できたが、大きな問題は検出されなかった' };
+}
+function snsScore(sns){
+  const s = clamp(sns.length*5, 0, 10);
+  return { score:s, reason: sns.length ? `${sns.map(x=>x.type).join('・')}のアカウントを確認` : 'SNSアカウントを確認できなかった（カスタム検索の設定または実際に情報が少ない可能性）' };
+}
+function keywordScore(words, snippets, max){
+  const text = snippets.join(' ');
+  const hits = words.filter(w => text.includes(w));
+  const score = clamp(hits.length * Math.ceil(max/3), 0, max);
+  return { score, reason: hits.length ? `口コミ・記事に「${hits.slice(0,4).join('」「')}」等の言葉あり` : '関連する言葉を口コミ・記事から確認できなかった' };
+}
+
+function buildStore(cand, enrich, genre){
+  const rating = { value: cand.rating ?? null, scale:5, source: cand.rating!=null?'Googleマップ':UNKNOWN };
+  const review_count = { value: cand.review_count ?? null, source: cand.review_count!=null?'Googleマップ':UNKNOWN };
+  const site = cand.website
+    ? { status: enrich.siteAudit && enrich.siteAudit.issues.length ? 'あり（改善余地あり）' : (enrich.siteAudit && enrich.siteAudit.reachable ? 'あり（確認済み）' : UNKNOWN), url: cand.website, notes: enrich.siteAudit ? (enrich.siteAudit.issues.join('／') || '大きな問題は検出されず') : UNKNOWN }
+    : { status: 'なし', url: null, notes: 'Googleマップに公式サイトの登録なし' };
+
+  const rep = reputationScore(rating.value);
+  const rev = reviewsScore(review_count.value);
+  const uni = keywordScore(UNIQUENESS_WORDS, enrich.snippets, 15);
+  const loc = keywordScore(LOCALITY_WORDS, enrich.snippets, 15);
+  const web = webGapScore(cand, enrich.siteAudit);
+  const sns = snsScore(enrich.sns);
+  const demandScore = clamp(Math.round(web.score*0.3 + rev.score*0.3), 0, 10);
+  const hp = { score: demandScore, reason:`Webサイト不足${web.score}/20点、口コミ数${rev.score}/15点から算出` };
+
+  const breakdown = [
+    {...SCORE_ITEMS[0], score:rep.score, reason:rep.reason},
+    {...SCORE_ITEMS[1], score:rev.score, reason:rev.reason},
+    {...SCORE_ITEMS[2], score:uni.score, reason:uni.reason},
+    {...SCORE_ITEMS[3], score:loc.score, reason:loc.reason},
+    {...SCORE_ITEMS[4], score:web.score, reason:web.reason},
+    {...SCORE_ITEMS[5], score:sns.score, reason:sns.reason},
+    {...SCORE_ITEMS[6], score:hp.score, reason:hp.reason},
+  ];
+  const total = breakdown.reduce((a,b)=>a+b.score,0);
+
+  const reasonParts = [];
+  reasonParts.push(rating.value!=null ? `評価${rating.value}（${rating.source}）` : '評価は確認できず');
+  reasonParts.push(review_count.value!=null ? `口コミ${review_count.value}件` : '口コミ数は確認できず');
+  reasonParts.push(site.status==='なし' ? '公式サイトなし' : `公式サイト${site.status}`);
+  if(enrich.sns.length) reasonParts.push(`SNS（${enrich.sns.map(x=>x.type).join('・')}）あり`);
+  if(uni.score>0) reasonParts.push('独自性を示す言葉あり');
+  if(loc.score>0) reasonParts.push('地域性を示す言葉あり');
+
+  const seen = new Set(); const sources=[];
+  for(const s of enrich.sources){
+    if(!s || !safeUrl(s.url)) continue;
+    const k = s.url.toLowerCase();
+    if(seen.has(k)) continue;
+    seen.add(k); sources.push(s);
+  }
+
+  return {
+    id: Math.random().toString(36).slice(2,10),
+    name: cand.name || UNKNOWN, address: cand.address || UNKNOWN, genre, phone: cand.phone || UNKNOWN,
+    rating, review_count, official_site: site, sns: enrich.sns,
+    candidate_reason: reasonParts.join('／'), breakdown, total, sources,
+    source_note: sources.length<2 ? '確認できた情報源が2件未満です。内容を必ずご自身でも確認してください。' : null,
+  };
+}
+
+// ---------- Google Maps JavaScript API（Places）を動的読み込み ----------
+let mapsLoadPromise = null, mapsLoadedKey = null;
+function loadMaps(key){
+  if(mapsLoadPromise && mapsLoadedKey === key) return mapsLoadPromise;
+  mapsLoadedKey = key;
+  window.__meiten_authFailure = false;
+  window.gm_authFailure = () => { window.__meiten_authFailure = true; };
+  mapsLoadPromise = new Promise((resolve, reject) => {
+    (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({key, v:"weekly"});
+    google.maps.importLibrary("places").then(lib => {
+      setTimeout(() => {
+        if(window.__meiten_authFailure) reject(new Error('Google Maps APIの認証に失敗しました。APIキーが正しいか、「Maps JavaScript API」「Places API (New)」を有効化しているか、HTTPリファラー制限にこのページのURLを許可しているかをご確認ください。'));
+        else resolve(lib);
+      }, 300);
+    }).catch(reject);
+  });
+  return mapsLoadPromise;
+}
+
+async function placesTextSearch(key, textQuery){
+  const { Place } = await loadMaps(key);
+  const req = {
+    textQuery,
+    fields: ['displayName','formattedAddress','rating','userRatingCount','websiteURI','businessStatus','googleMapsURI','internationalPhoneNumber'],
+    language: 'ja', region: 'jp',
+  };
+  const { places } = await Place.searchByText(req);
+  return (places||[]).map(p => ({
+    name: p.displayName || '', address: p.formattedAddress || '', rating: p.rating ?? null, review_count: p.userRatingCount ?? null,
+    website: p.websiteURI || null, status: p.businessStatus || null, maps_url: p.googleMapsURI || null, phone: p.internationalPhoneNumber || null,
+  }));
+}
+
+async function customSearch(key, cx, q, num=5){
+  const url = new URL('https://www.googleapis.com/customsearch/v1');
+  url.searchParams.set('key', key); url.searchParams.set('cx', cx); url.searchParams.set('q', q);
+  url.searchParams.set('num', String(clamp(num,1,10))); url.searchParams.set('lr','lang_ja'); url.searchParams.set('gl','jp'); url.searchParams.set('hl','ja');
+  const res = await fetch(url);
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok){ const msg = data?.error?.message || res.statusText; throw new Error(`Googleカスタム検索APIエラー: ${msg}`); }
+  return (data.items||[]).map(it => ({ title: it.title, link: it.link, snippet: it.snippet }));
+}
+
+async function auditSiteViaServer(url){
+  try{
+    const r = await fetch('/api/audit-site', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({url}) });
+    if(!r.ok) return null;
+    return await r.json();
+  }catch{ return null; }
+}
+
+async function enrichStore(cand, area, keys){
+  const notes = { sns: [], sources: [], snippets: [] };
+  if(keys.search && keys.cx){
+    for(const [type, site] of [['Instagram','instagram.com'],['Facebook','facebook.com']]){
+      try{
+        const r = await customSearch(keys.search, keys.cx, `"${cand.name}" ${area} site:${site}`, 3);
+        const hit = r.find(it => it.link && it.link.includes(site));
+        if(hit){ notes.sns.push({type, url:hit.link}); notes.sources.push({title:hit.title||type, url:hit.link}); }
+      }catch(e){ notes.warning = e.message; }
+    }
+    try{
+      const r = await customSearch(keys.search, keys.cx, `"${cand.name}" ${area} 口コミ OR 評判 OR 名物`, 5);
+      for(const it of r.slice(0,4)){ notes.snippets.push(it.snippet||''); notes.sources.push({title:it.title||it.link, url:it.link}); }
+    }catch(e){ notes.warning = e.message; }
+  }
+  if(cand.maps_url) notes.sources.unshift({title:'Googleマップ', url:cand.maps_url});
+  let siteAudit = null;
+  if(cand.website) siteAudit = await auditSiteViaServer(cand.website);
+  return { ...notes, siteAudit };
+}
+
+async function runSearch({pref, city, genre, count}){
+  const keys = loadKeys();
+  const area = `${pref}${city}`;
+  if(!keys.places) return demoSearch({pref, city, genre, count});
+
+  const all = await placesTextSearch(keys.places, `${area} ${genre==='その他'?'人気 店':genre}`);
+  const excluded = [];
+  let candidates = [];
+  for(const p of all){
+    if(!p.name) continue;
+    if(p.status==='CLOSED_PERMANENTLY'){ excluded.push({name:p.name, reason:'閉業（Googleマップの登録情報）'}); continue; }
+    if(p.status==='CLOSED_TEMPORARILY'){ excluded.push({name:p.name, reason:'一時休業中（Googleマップの登録情報）'}); continue; }
+    if(isChain(p.name)){ excluded.push({name:p.name, reason:'全国チェーン・大手企業のため除外'}); continue; }
+    if((p.rating??0) < 4.0){ excluded.push({name:p.name, reason:`評価が基準未満（${p.rating??UNKNOWN}）`}); continue; }
+    if((p.review_count??0) < 20){ excluded.push({name:p.name, reason:`口コミ件数が基準未満（${p.review_count??UNKNOWN}件）`}); continue; }
+    candidates.push(p);
+  }
+  candidates.sort((a,b)=>{
+    const wa=a.website?0:1, wb=b.website?0:1;
+    if(wa!==wb) return wb-wa;
+    return (b.rating*Math.log((b.review_count||1)+1)) - (a.rating*Math.log((a.review_count||1)+1));
+  });
+  candidates = candidates.slice(0, Math.min(candidates.length, count*2, 14));
+
+  const stores = [];
+  for(const c of candidates){
+    const enrich = await enrichStore(c, area, keys);
+    stores.push(buildStore(c, enrich, genre));
+  }
+  stores.sort((a,b)=>b.total-a.total);
+  return { demo:false, searched_at: new Date().toLocaleString('ja-JP',{hour12:false}), query:{pref,city,genre,count},
+    used_custom_search: !!(keys.search && keys.cx), places_examined: all.length, stores: stores.slice(0,count), excluded };
+}
+
+function demoSearch({pref, city, genre, count}){
+  const area = `${pref}${city}`;
+  const mk = (name, rating, rc, hasSite, sns, words) => {
+    const cand = { name, address:`${area}（サンプル住所）`, rating, review_count:rc, website: hasSite?'https://example.com/sample-old-site':null, maps_url:'https://example.com/maps-sample', phone:null };
+    const enrich = { sns: sns.map(t=>({type:t, url:`https://example.com/${t.toLowerCase()}-sample`})), sources:[{title:'サンプル情報源（実在しません）', url:'https://example.com/sample-source'}], snippets:[words.join('。')], siteAudit: hasSite?{reachable:true, issues:['スマートフォン表示（viewportタグ）が見つからない（サンプル）']}:null };
+    return buildStore(cand, enrich, genre);
+  };
+  const stores = [
+    mk('【サンプル】ひだまり食堂', 4.6, 212, false, ['Instagram'], ['地元','名物','老舗']),
+    mk('【サンプル】理容かざぐるま', 4.4, 58, true, ['Facebook'], ['創業']),
+    mk('【サンプル】湯宿つきみ荘', 4.2, 96, false, [], ['郷土']),
+  ].slice(0,count).sort((a,b)=>b.total-a.total);
+  return { demo:true, searched_at: new Date().toLocaleString('ja-JP',{hour12:false}), query:{pref,city,genre,count}, used_custom_search:false, places_examined:0, stores,
+    excluded:[{name:'【サンプル】全国チェーンの店舗', reason:'全国展開のチェーン店のため除外（サンプル）'}] };
+}
+
+function withTimer(el, label){
+  const t0 = Date.now();
+  const draw = () => { el.innerHTML = `<span class="spinner"></span>${esc(label)}（${Math.round((Date.now()-t0)/1000)}秒経過）`; };
+  draw(); const id = setInterval(draw, 1000); return () => clearInterval(id);
+}
+function showError(el, where, err, input){
+  const keys = loadKeys();
+  const info = ['【名店検索ツール エラー報告】','発生日時: ' + new Date().toLocaleString('ja-JP'),'操作: ' + where,
+    '入力: ' + (input ? JSON.stringify(input) : 'なし'),
+    'Placesキー設定: ' + (keys.places ? 'あり（' + keys.places.length + '文字）' : 'なし'),
+    'カスタム検索設定: ' + (keys.search && keys.cx ? 'あり' : 'なし'),
+    'ブラウザ: ' + navigator.userAgent, '---', String(err && err.message || err)].join('\n');
+  el.innerHTML = `<div class="errbox"><h3>エラーが発生しました</h3><div>下のボタンでコピーして、そのままClaudeに貼り付けて送ってください。</div>
+    <pre>${esc(info)}</pre><button type="button" class="copyErr">エラー内容をコピー</button> <span class="hint copied"></span></div>`;
+  el.querySelector('.copyErr').onclick = async () => {
+    try{ await navigator.clipboard.writeText(info); el.querySelector('.copied').textContent = 'コピーしました'; }
+    catch{ el.querySelector('.copied').textContent = 'コピーできませんでした。枠内の文字を選んでコピーしてください'; }
+  };
+}
+
+$('#searchForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const genre = $('#genre').value === 'その他' ? ($('#genreOther').value.trim() || 'その他') : $('#genre').value;
+  const q = { pref: $('#pref').value, city: $('#city').value.trim(), genre, count: Number($('#count').value) };
+  if(!q.pref){ $('#pref').focus(); return; }
+  $('#goBtn').disabled = true; $('#results').innerHTML = '';
+  const stop = withTimer($('#status'), `${q.pref}${q.city}の「${genre}」を調査中…`);
+  try{
+    const res = await runSearch(q);
+    state.result = res;
+    $('#status').textContent = '';
+    render(res);
+  }catch(err){ showError($('#status'), '名店を探す', err, q); }
+  finally{ stop(); $('#goBtn').disabled = false; }
+});
+
+function siteChip(site){
+  const m = {'なし':'good','あり（改善余地あり）':'warn'};
+  const label = site.status==='なし'?'公式HPなし':site.status.startsWith('あり')?site.status:'公式HP '+site.status;
+  return `<span class="chip ${m[site.status]||''}">${esc(label)}</span>`;
+}
+
+function render(res){
+  const q = res.query;
+  let h = `<div class="meta"><span>調査日時：${esc(res.searched_at)}（検索時点の情報）</span><span>条件：${esc(q.pref+q.city)} / ${esc(q.genre)}</span>`
+    + (res.demo?'<span>デモデータ</span>':`<span>Places候補 ${esc(res.places_examined)}件中から選定</span>`) + `</div>`;
+  if(!res.stores.length){
+    h += `<div class="empty">条件に合う店舗が見つかりませんでした。市区町村を広げるか、ジャンルを変えてお試しください。</div>`;
+  } else {
+    h += `<div class="toolbar"><button id="csvBtn">CSVで保存</button><button id="jsonBtn">JSONで保存（バックアップ用）</button></div><div class="cards">`;
+    res.stores.forEach((s,i)=>{ h += card(s,i); });
+    h += `</div>`;
+  }
+  if(res.excluded && res.excluded.length){
+    h += `<details class="excluded"><summary>除外した店舗（${res.excluded.length}件）</summary><ul>${res.excluded.map(x=>`<li>${esc(x.name)}：${esc(x.reason)}</li>`).join('')}</ul></details>`;
+  }
+  $('#results').innerHTML = h;
+  $('#csvBtn')?.addEventListener('click', downloadCsv);
+  $('#jsonBtn')?.addEventListener('click', downloadJson);
+  document.querySelectorAll('[data-prompt]').forEach(b=>b.addEventListener('click',()=>openPromptDialog(b.dataset.prompt)));
+}
+
+function card(s,i){
+  const rating = s.rating.value===null? val(null) : `★ ${esc(s.rating.value)} <span class="hint">（${esc(s.rating.source)}）</span>`;
+  const reviews = s.review_count.value===null? val(null) : `${esc(s.review_count.value)}件 <span class="hint">（${esc(s.review_count.source)}）</span>`;
+  const site = s.official_site.url ? `${link(s.official_site.url, '公式サイト')}　<span class="hint">${val(s.official_site.notes)}</span>` : `${esc(s.official_site.status)}`;
+  const sns = s.sns.length ? s.sns.map(x=>link(x.url,x.type)).join('　') : val(null);
+  const bars = s.breakdown.map(b=>`<div class="bar-row"><div class="bar-top"><span>${esc(b.label)}</span><span>${b.score} / ${b.max}</span></div><div class="bar"><i style="width:${(b.score/b.max*100).toFixed(0)}%"></i></div><div class="bar-reason">${esc(b.reason)}</div></div>`).join('');
+  const sources = s.sources.length ? `<ol class="sources">${s.sources.map(x=>`<li>${link(x.url,x.title)}</li>`).join('')}</ol>` : val(null);
+  return `<article class="card">
+    <div class="card-head"><div><div class="rank">候補 ${i+1}</div><h2>${esc(s.name)}</h2></div>
+      <div class="score"><b>${s.total}</b><span>制作候補スコア</span></div></div>
+    <div class="chips"><span class="chip">${esc(s.genre)}</span>${siteChip(s.official_site)}${s.sns.length?`<span class="chip">SNS ${s.sns.length}件</span>`:''}</div>
+    <dl class="facts">
+      <dt>住所</dt><dd>${val(s.address)}</dd>
+      <dt>評価</dt><dd>${rating}</dd>
+      <dt>口コミ数</dt><dd>${reviews}</dd>
+      <dt>公式HP</dt><dd>${site}</dd>
+      <dt>SNS</dt><dd>${sns}</dd>
+    </dl>
+    <div class="reason"><strong>選出理由（機械的に抽出）</strong>${val(s.candidate_reason)}</div>
+    <details><summary>スコアの内訳（${s.total}点 / 100点）</summary><div class="bars">${bars}</div></details>
+    <details><summary>調査に使用した情報源（${s.sources.length}件）</summary>${sources}</details>
+    ${s.source_note?`<div class="note">${esc(s.source_note)}</div>`:''}
+    <div class="card-actions"><button class="make" data-prompt="${esc(s.id)}">ChatGPT用プロンプトを作る</button></div>
+  </article>`;
+}
+
+function generatePrompt(s){
+  const lines = [];
+  lines.push('あなたはWebデザイナー兼コーダーです。以下は、実際にGoogle検索・Googleマップから取得した、ある地方店舗の調査データです。');
+  lines.push('このデータ「だけ」を根拠に、その店の1ページ完結のホームページ（HTMLファイル1つ、CSSも同じファイル内、スマートフォン対応）を作ってください。');
+  lines.push('');
+  lines.push('【厳守してください】');
+  lines.push('・このデータに書かれていない事実（営業時間、メニュー名、価格、電話番号、受賞歴など）を、絶対に作り出さないでください。');
+  lines.push('・分からない項目は、正直に「【要確認】」と表示し、あとで店主に確認してもらう前提にしてください。');
+  lines.push('・「確認できず」と書かれている項目も同様に、それらしい数字や文章を補わないでください。');
+  lines.push('・キャッチコピーや紹介文は、下の「選出理由」「特徴」に書かれている事実の範囲内で作成してください。');
+  lines.push('');
+  lines.push('【店舗データ】');
+  lines.push(`店舗名: ${s.name}`);
+  lines.push(`住所: ${s.address}`);
+  lines.push(`ジャンル: ${s.genre}`);
+  lines.push(`電話: ${s.phone || UNKNOWN}`);
+  lines.push(`評価: ${s.rating.value!=null ? s.rating.value+'（'+s.rating.source+'）' : UNKNOWN}`);
+  lines.push(`口コミ数: ${s.review_count.value!=null ? s.review_count.value+'件（'+s.review_count.source+'）' : UNKNOWN}`);
+  lines.push(`公式サイト: ${s.official_site.status}${s.official_site.url ? '（'+s.official_site.url+'）' : ''}${s.official_site.notes && s.official_site.notes!==UNKNOWN ? '／'+s.official_site.notes : ''}`);
+  lines.push(`SNS: ${s.sns.length ? s.sns.map(x=>x.type+' '+x.url).join('、') : UNKNOWN}`);
+  lines.push(`選出理由（口コミ・データから機械的に抽出）: ${s.candidate_reason || UNKNOWN}`);
+  if(s.sources && s.sources.length){
+    lines.push('');
+    lines.push('【情報源（参考。ChatGPTがこのURLを実際に開けるとは限らないので、内容の裏取りは人がしてください）】');
+    s.sources.forEach(x=>lines.push('- '+x.title+'： '+x.url));
+  }
+  lines.push('');
+  lines.push('【作ってほしいもの】');
+  lines.push('・ヒーローセクション（店名・キャッチコピー・雰囲気の伝わるレイアウト）');
+  lines.push('・店の特徴／選ばれている理由のセクション（上のデータの範囲で）');
+  lines.push('・アクセス・SNSリンクのセクション（住所・SNSは上のデータどおりに。地図の埋め込みは【要確認】でよい）');
+  lines.push('・営業時間・電話番号など未確認の項目をまとめた「店主に確認してほしいこと」リスト');
+  lines.push('・完成したHTMLコードをコードブロックで出力してください');
+  return lines.join('\n');
+}
+
+function openPromptDialog(id){
+  const s = state.result.stores.find(x=>x.id===id);
+  const text = generatePrompt(s);
+  $('#dlgTitle').textContent = `${s.name}：ChatGPT用プロンプト`;
+  $('#dlgBody').innerHTML = `
+    <p class="hint">下の「コピー」を押して、<a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">ChatGPT</a>の新しい会話に貼り付けてください。返ってきたHTMLコードは、そのままファイルに保存すればホームページとして開けます。</p>
+    <textarea id="promptText" readonly style="width:100%;height:360px;font:12px/1.6 monospace;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--text)"></textarea>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+      <button id="copyPromptBtn">コピー</button><span class="hint" id="copyPromptMsg"></span>
+    </div>`;
+  $('#promptText').value = text;
+  $('#copyPromptBtn').onclick = async () => {
+    try{ await navigator.clipboard.writeText(text); $('#copyPromptMsg').textContent = 'コピーしました'; }
+    catch{ $('#promptText').select(); $('#copyPromptMsg').textContent = '自動コピーできなかったので、テキストを選択しました。Ctrl+Cでコピーしてください'; }
+  };
+  $('#dlgExtra').hidden = true;
+  const dlg = $('#dlg'); if(!dlg.open) dlg.showModal();
+}
+
+function downloadCsv(){
+  const head = ['店舗名','住所','ジャンル','電話','評価','口コミ数','公式HP状態','公式HP URL','SNS','選出理由','スコア',...state.result.stores[0].breakdown.map(b=>b.label),'情報源','調査日時'];
+  const rows = state.result.stores.map(s=>[s.name,s.address,s.genre,s.phone,s.rating.value??UNKNOWN,s.review_count.value??UNKNOWN,s.official_site.status,s.official_site.url||'',s.sns.map(x=>x.url).join(' '),s.candidate_reason,s.total,...s.breakdown.map(b=>b.score),s.sources.map(x=>x.url).join(' '),state.result.searched_at]);
+  const csv = '﻿'+[head,...rows].map(r=>r.map(c=>`"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = `名店候補_${state.result.query.pref}${state.result.query.city}_${state.result.query.genre}.csv`; a.click();
+}
+function downloadJson(){
+  const data = { exported_at: new Date().toISOString(), query: state.result.query, stores: state.result.stores };
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  a.download = `名店候補_${state.result.query.pref}${state.result.query.city}_${state.result.query.genre}.json`; a.click();
+}
+</script>
+</body>
+</html>
